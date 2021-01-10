@@ -20,6 +20,7 @@
 #define SHARED_NUMBER_KEY 300
 #define SHARED_BUFFER_SIZE_KEY 500
 #define SEMAPHORE_KEY 400
+#define CONSUMER_SEM_KEY 650
 #define BUF_SIZE 30
 #define REMAINING_KEY 550
 /* arg for semctl system calls. */
@@ -38,7 +39,7 @@ struct msgbuff
     int num;
 };
 
-int shmid, numid, semaphoreId, qId, remid;
+int shmid, numid, semaphoreId, consumerid,qId, remid;
 int *buffer, *num, *rem;
 
 void initQueue();
@@ -50,6 +51,7 @@ void up(int);
 void clearResources();
 void sendMsg();
 void rcvMsg();
+int getSemaphore(int);
 
 int main(int argc, char *argv[])
 {
@@ -58,25 +60,28 @@ int main(int argc, char *argv[])
     int i;
     while (1)
     {
-        if (*num < 0)
+        if (getSemaphore(numid) < 0){
+            clearResources();
             exit(1); /* underflow */
+        }
 
-        while (*num == 0)
+        if (getSemaphore(numid) == 0)
             rcvMsg();
 
         down(semaphoreId);
         /* if executing here, buffer not empty so remove element */
         i = buffer[*rem];
         (*rem) = (((*rem) + 1) % BUF_SIZE);
+        printf("Consume value %d number is %d\n", i, getSemaphore(numid));
+        fflush(stdout);
 
-        if (*num == BUF_SIZE)
+        if (getSemaphore(numid) == BUF_SIZE)
             sendMsg();
 
-        (*num)--;
-        up(semaphoreId);
-
-        printf("Consume value %d number is %d\n", i, *num);
+        down(numid);
+        printf("Consume value %d number is %d\n", i, getSemaphore(numid));
         fflush(stdout);
+        up(semaphoreId);
     }
 }
 
@@ -94,28 +99,61 @@ void initQueue()
 void initSemaphores()
 {
     // initializing the semaphore
-    semaphoreId = semget(SEMAPHORE_KEY, 1, 0666 | IPC_CREAT);
+    int exists = semget(SEMAPHORE_KEY, 1, 0666 | IPC_CREAT| IPC_EXCL);
 
-    if (semaphoreId == -1)
+    if (exists == -1)
     {
-        perror("Error in creating semaphore");
-        exit(-1);
+        semaphoreId = semget(SEMAPHORE_KEY, 1, 0666 | IPC_CREAT);
+    }
+    else{
+        semaphoreId = exists;
+        // set default value of the semaphore
+        union semun semaphoreUn;
+        semaphoreUn.val = 1;
+        if (semctl(semaphoreId, 0, SETVAL, semaphoreUn) == -1)
+        {
+            perror("Error in setting initial value of semaphore");
+            exit(-1);
+        }
     }
 
-    // set default value of the semaphore
-    union semun semaphoreUn;
-    semaphoreUn.val = 1;
-    if (semctl(semaphoreId, 0, SETVAL, semaphoreUn) == -1)
+    int numidExists = semget(SHARED_NUMBER_KEY,1, 0666 | IPC_CREAT | IPC_EXCL);
+    if (numidExists == -1)
     {
-        perror("Error in setting initial value of semaphore");
-        exit(-1);
+        numid = semget(SHARED_NUMBER_KEY, 1, 0666 | IPC_CREAT);
+    }
+    else{
+        numid = numidExists;
+        // set default value of the semaphore
+        union semun semaphoreUn;
+        semaphoreUn.val = 0;
+        if (semctl(numid, 0, SETVAL, semaphoreUn) == -1)
+        {
+            perror("Error in setting initial value of semaphore");
+            exit(-1);
+        }
+    }
+    int consumerExists = semget(CONSUMER_SEM_KEY,1, 0666 | IPC_CREAT | IPC_EXCL);
+    if (consumerExists == -1)
+    {
+        consumerid = semget(CONSUMER_SEM_KEY, 1, 0666 | IPC_CREAT);
+    }
+    else{
+        consumerid = consumerExists;
+        // set default value of the semaphore
+        union semun semaphoreUn;
+        semaphoreUn.val = 0;
+        if (semctl(consumerid, 0, SETVAL, semaphoreUn) == -1)
+        {
+            perror("Error in setting initial value of semaphore");
+            exit(-1);
+        }
     }
 }
 
 void initSharedMemory()
 {
     shmid = shmget(SHARED_BUFFER_KEY, (BUF_SIZE) * sizeof(int), IPC_CREAT | 0644);
-    numid = shmget(SHARED_NUMBER_KEY, sizeof(int), IPC_CREAT | 0644);
     remid = shmget(REMAINING_KEY, sizeof(int), IPC_CREAT | 0644);
 
     if (shmid == -1 || numid == -1 || remid == -1)
@@ -125,10 +163,9 @@ void initSharedMemory()
     }
 
     buffer = shmat(shmid, (void *)0, 0);
-    num = shmat(numid, (void *)0, 0);
     rem = shmat(remid, (void *)0, 0);
 
-    if (*buffer == -1 || num == -1 || rem == -1)
+    if (*buffer == -1 || rem == -1)
     {
         perror("Error in attaching shared memory");
         exit(-1);
@@ -142,6 +179,7 @@ void init()
     initQueue();
     initSemaphores();
     initSharedMemory();
+    up(consumerid);
 }
 
 void down(int sem)
@@ -183,11 +221,6 @@ void clearResources()
     shmctl(shmid, IPC_RMID, (struct shmid_ds *)0);
 
     // deattaching the num
-    shmdt(num);
-    // destrcuting the buffer
-    shmctl(numid, IPC_RMID, (struct shmid_ds *)0);
-
-    // deattaching the num
     shmdt(rem);
     // destrcuting the buffer
     shmctl(remid, IPC_RMID, (struct shmid_ds *)0);
@@ -196,6 +229,7 @@ void clearResources()
     msgctl(qId, IPC_RMID, (struct msqid_ds *)0);
     // destructing the semaphores
     semctl(semaphoreId, 0, IPC_RMID);
+    down(consumerid);
 }
 
 void sendMsg()
@@ -218,7 +252,8 @@ void rcvMsg()
     printf("Waiting for message from producer\n");
     fflush(stdout);
 
-    int recievedValue = msgrcv(qId, &message, sizeof(message.num), 8, !IPC_NOWAIT);
+    int recievedValue = msgrcv(qId, &message, sizeof(message.num), 7, !IPC_NOWAIT);
+    printf("Message received with val = %d\n",message.num);
     fflush(stdout);
     if (recievedValue == -1)
     {
@@ -226,4 +261,9 @@ void rcvMsg()
         exit(-1);
     }
     fflush(stdout);
+}
+
+int getSemaphore(int semId){
+    union semun argument;
+    return semctl(semId,0,GETVAL,argument);
 }
