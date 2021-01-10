@@ -24,14 +24,14 @@
 #define BUF_SIZE 30
 #define ADD_KEY 600
 /* arg for semctl system calls. */
-// union semun
-// {
-//     int val;               /* value for SETVAL */
-//     struct semid_ds *buf;  /* buffer for IPC_STAT & IPC_SET */
-//     ushort *array;         /* array for GETALL & SETALL */
-//     struct seminfo *__buf; /* buffer for IPC_INFO */
-//     void *__pad;
-// };
+union semun
+{
+    int val;               /* value for SETVAL */
+    struct semid_ds *buf;  /* buffer for IPC_STAT & IPC_SET */
+    ushort *array;         /* array for GETALL & SETALL */
+    struct seminfo *__buf; /* buffer for IPC_INFO */
+    void *__pad;
+};
 
 struct msgbuff
 {
@@ -57,7 +57,7 @@ int main(int argc, char *argv[])
     init();
 
     // adding values to buffer
-    for (int i = 1; i <= 100; i++)
+    for (int i = 1;; i++)
     {
         if (*num > BUF_SIZE)
             exit(1); /* overflow */
@@ -68,7 +68,6 @@ int main(int argc, char *argv[])
         down(semaphoreId);
         buffer[*add] = i;
         (*add) = ((*add) + 1) % BUF_SIZE;
-        sleep(1);
 
         if (*num == 0)
             sendMsg();
@@ -78,6 +77,7 @@ int main(int argc, char *argv[])
         printf("producer: inserted %d - Buffer size: %d\n", i, *num);
         fflush(stdout);
     }
+    clearResources();
 }
 
 void initQueue()
@@ -117,7 +117,7 @@ void initSharedMemory()
     shmid = shmget(SHARED_BUFFER_KEY, (BUF_SIZE) * sizeof(int), IPC_CREAT | 0644);
     numid = shmget(SHARED_NUMBER_KEY, sizeof(int), IPC_CREAT | 0644);
     addId = shmget(ADD_KEY, sizeof(int), IPC_CREAT | 0644);
-
+    printf("%d %d %d\n",shmid,numid,addId);
     if (shmid == -1 || numid == -1 || addId == -1)
     {
         perror("Error in creating shared");
@@ -181,6 +181,9 @@ void clearResources()
     shmdt(buffer);
     // deattaching the num
     shmdt(num);
+    //detaching add
+    shmdt(add);
+    shmctl(addId,IPC_RMID,(struct shmid_ds *)0);
 }
 
 void sendMsg()
