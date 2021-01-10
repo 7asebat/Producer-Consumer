@@ -21,15 +21,16 @@
 #define SHARED_BUFFER_SIZE_KEY 500
 #define SEMAPHORE_KEY 400
 #define BUF_SIZE 30
+#define REMAINING_KEY 550
 /* arg for semctl system calls. */
-union semun
-{
-    int val;               /* value for SETVAL */
-    struct semid_ds *buf;  /* buffer for IPC_STAT & IPC_SET */
-    ushort *array;         /* array for GETALL & SETALL */
-    struct seminfo *__buf; /* buffer for IPC_INFO */
-    void *__pad;
-};
+// union semun
+// {
+//     int val;               /* value for SETVAL */
+//     struct semid_ds *buf;  /* buffer for IPC_STAT & IPC_SET */
+//     ushort *array;         /* array for GETALL & SETALL */
+//     struct seminfo *__buf; /* buffer for IPC_INFO */
+//     void *__pad;
+// };
 
 struct msgbuff
 {
@@ -37,9 +38,8 @@ struct msgbuff
     int num;
 };
 
-int rem = 0; /* place to remove next element */
-int shmid, numid, semaphoreId, qId, sizeid;
-int *buffer, *num;
+int shmid, numid, semaphoreId, qId, remid;
+int *buffer, *num, *rem;
 
 void initQueue();
 void initSemaphores();
@@ -61,13 +61,13 @@ int main(int argc, char *argv[])
         if (*num < 0)
             exit(1); /* underflow */
 
-        if (*num == 0)
+        while (*num == 0)
             rcvMsg();
 
         down(semaphoreId);
         /* if executing here, buffer not empty so remove element */
-        i = buffer[rem];
-        rem = (rem + 1) % BUF_SIZE;
+        i = buffer[*rem];
+        (*rem) = (((*rem) + 1) % BUF_SIZE);
 
         if (*num == BUF_SIZE)
             sendMsg();
@@ -116,8 +116,9 @@ void initSharedMemory()
 {
     shmid = shmget(SHARED_BUFFER_KEY, (BUF_SIZE) * sizeof(int), IPC_CREAT | 0644);
     numid = shmget(SHARED_NUMBER_KEY, sizeof(int), IPC_CREAT | 0644);
+    remid = shmget(REMAINING_KEY, sizeof(int), IPC_CREAT | 0644);
 
-    if (shmid == -1 || numid == -1 || sizeid == -1)
+    if (shmid == -1 || numid == -1 || remid == -1)
     {
         perror("Error in creating shared");
         exit(-1);
@@ -125,8 +126,9 @@ void initSharedMemory()
 
     buffer = shmat(shmid, (void *)0, 0);
     num = shmat(numid, (void *)0, 0);
+    rem = shmat(remid, (void *)0, 0);
 
-    if (*buffer == -1 || num == -1)
+    if (*buffer == -1 || num == -1 || rem == -1)
     {
         perror("Error in attaching shared memory");
         exit(-1);
@@ -184,6 +186,12 @@ void clearResources()
     shmdt(num);
     // destrcuting the buffer
     shmctl(numid, IPC_RMID, (struct shmid_ds *)0);
+
+    // deattaching the num
+    shmdt(rem);
+    // destrcuting the buffer
+    shmctl(remid, IPC_RMID, (struct shmid_ds *)0);
+
     // destructing the message queue
     msgctl(qId, IPC_RMID, (struct msqid_ds *)0);
     // destructing the semaphores
