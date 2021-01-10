@@ -21,6 +21,7 @@
 #define SHARED_NUMBER_KEY 300
 #define SHARED_BUFFER_SIZE_KEY 500
 #define SEMAPHORE_KEY 400
+#define BUF_SIZE 30
 /* arg for semctl system calls. */
 union semun
 {
@@ -39,7 +40,7 @@ struct msgbuff
 
 int add = 0; /* place to add next element */
 int shmid, numid, semaphoreId, qId, sizeid;
-int *buffer, *num, *BUF_SIZE;
+int *buffer, *num;
 
 void initQueue();
 void initSemaphores();
@@ -50,7 +51,6 @@ void up(int);
 void clearResources();
 void sendMsg();
 void rcvMsg();
-void getBufferSize();
 
 int main(int argc, char *argv[])
 {
@@ -59,15 +59,15 @@ int main(int argc, char *argv[])
     // adding values to buffer
     for (int i = 1; i <= 200; i++)
     {
-        if (*num > *(BUF_SIZE))
+        if (*num > BUF_SIZE)
             exit(1); /* overflow */
 
-        while ((*num) == *(BUF_SIZE))
+        if ((*num) == BUF_SIZE)
             rcvMsg();
 
         down(semaphoreId);
         buffer[add] = i;
-        add = (add + 1) % *(BUF_SIZE);
+        add = (add + 1) % BUF_SIZE;
 
         if (*num == 0)
             sendMsg();
@@ -113,7 +113,7 @@ void initSemaphores()
 
 void initSharedMemory()
 {
-    shmid = shmget(SHARED_BUFFER_KEY, (*BUF_SIZE) * sizeof(int), IPC_CREAT | 0644);
+    shmid = shmget(SHARED_BUFFER_KEY, (BUF_SIZE) * sizeof(int), IPC_CREAT | 0644);
     numid = shmget(SHARED_NUMBER_KEY, sizeof(int), IPC_CREAT | 0644);
 
     if (shmid == -1 || numid == -1)
@@ -132,25 +132,9 @@ void initSharedMemory()
     }
 }
 
-void getBufferSize()
-{
-    sizeid = shmget(SHARED_BUFFER_SIZE_KEY, sizeof(int), IPC_CREAT | 0644);
-
-    if (sizeid == -1)
-    {
-        perror("Error in creating shared");
-        exit(-1);
-    }
-
-    BUF_SIZE = shmat(sizeid, (void *)0, 0);
-    printf("Enter buffer size\n");
-    scanf("%d", BUF_SIZE);
-}
-
 void init()
 {
     signal(SIGINT, clearResources);
-    getBufferSize();
     initQueue();
     initSemaphores();
     initSharedMemory();
@@ -194,8 +178,6 @@ void clearResources()
     shmdt(buffer);
     // deattaching the num
     shmdt(num);
-    // detaching the size buffer
-    shmdt(BUF_SIZE);
 }
 
 void sendMsg()

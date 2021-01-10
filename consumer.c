@@ -20,7 +20,7 @@
 #define SHARED_NUMBER_KEY 300
 #define SHARED_BUFFER_SIZE_KEY 500
 #define SEMAPHORE_KEY 400
-
+#define BUF_SIZE 30
 /* arg for semctl system calls. */
 union semun
 {
@@ -39,7 +39,7 @@ struct msgbuff
 
 int rem = 0; /* place to remove next element */
 int shmid, numid, semaphoreId, qId, sizeid;
-int *buffer, *num, *BUF_SIZE;
+int *buffer, *num;
 
 void initQueue();
 void initSemaphores();
@@ -61,15 +61,15 @@ int main(int argc, char *argv[])
         if (*num < 0)
             exit(1); /* underflow */
 
-        while (*num == 0)
+        if (*num == 0)
             rcvMsg();
 
         down(semaphoreId);
         /* if executing here, buffer not empty so remove element */
         i = buffer[rem];
-        rem = (rem + 1) % *(BUF_SIZE);
+        rem = (rem + 1) % BUF_SIZE;
 
-        if (*num == *(BUF_SIZE))
+        if (*num == BUF_SIZE)
             sendMsg();
 
         (*num)--;
@@ -114,10 +114,7 @@ void initSemaphores()
 
 void initSharedMemory()
 {
-    sizeid = shmget(SHARED_BUFFER_SIZE_KEY, sizeof(int), IPC_CREAT | 0644);
-    BUF_SIZE = shmat(sizeid, (void *)0, 0);
-
-    shmid = shmget(SHARED_BUFFER_KEY, *(BUF_SIZE) * sizeof(int), IPC_CREAT | 0644);
+    shmid = shmget(SHARED_BUFFER_KEY, (BUF_SIZE) * sizeof(int), IPC_CREAT | 0644);
     numid = shmget(SHARED_NUMBER_KEY, sizeof(int), IPC_CREAT | 0644);
 
     if (shmid == -1 || numid == -1 || sizeid == -1)
@@ -187,12 +184,6 @@ void clearResources()
     shmdt(num);
     // destrcuting the buffer
     shmctl(numid, IPC_RMID, (struct shmid_ds *)0);
-
-    // deattaching the size buffer
-    shmdt(BUF_SIZE);
-    // destrcuting the buffer
-    shmctl(sizeid, IPC_RMID, (struct shmid_ds *)0);
-
     // destructing the message queue
     msgctl(qId, IPC_RMID, (struct msqid_ds *)0);
     // destructing the semaphores
