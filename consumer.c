@@ -106,7 +106,7 @@ void initSemaphores()
             perror("Error in setting initial value of semaphore");
             exit(-1);
         }
-        //Semaphore to keep count of consumers connected
+        //Semaphore to keep count of producers connected
         semaphoreUn.val = 0;
         if (semctl(semId, 4, SETVAL, semaphoreUn) == -1)
         {
