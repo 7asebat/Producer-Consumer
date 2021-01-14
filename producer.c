@@ -44,18 +44,24 @@ union semun
 int main()
 {
     init();
-    for(int i = 0;;i++){
+    int index = getSemaphore(semId,4);
+    int beg = (index * 1000);
+    int end = (beg+1000);
+    int value = beg;
+    while(1){
         down(semId,2);
         down(semId,0);
         
-        buff[*add] = i;
+        buff[*add] = value;
         (*add) = ((*add) + 1) % BUF_SIZE;
 
-        printf("producer: inserted %d\n", i);
+        printf("producer: inserted %d\n", value);
         fflush(stdout);
         up(semId,0);
         up(semId,1);
-
+        value = (value+1) % end;
+        if(value == 0)
+            value = beg;
     }
 }
 
