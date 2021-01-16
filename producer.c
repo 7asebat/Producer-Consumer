@@ -69,9 +69,9 @@ void init()
 {
     signal(SIGINT, clearResources);
     initSemaphores();
+    up(semId,3);
     up(semId,4);
     initSharedMemory();
-
 }
 
 
@@ -127,9 +127,16 @@ void initSemaphores()
 void initSharedMemory()
 {
     buffId = shmget(SHARED_BUFFER_KEY, (BUF_SIZE) * sizeof(int), IPC_CREAT | 0644);
-    addId = shmget(ADD_KEY, sizeof(int), IPC_CREAT | 0644);
+    addId = shmget(ADD_KEY, sizeof(int), IPC_CREAT | 0644 | IPC_EXCL);
+    int addIsNew = 1;
 
-    if (buffId == -1 || addId == -1)
+     //Check if rem exists to determine initialization
+    if(errno == EEXIST){
+        addId = shmget(ADD_KEY, sizeof(int), IPC_CREAT | 0644);
+        addIsNew = 0;
+    }
+
+    if (buffId == -1)
     {
         perror("Error in creating shared");
         exit(-1);
@@ -142,6 +149,10 @@ void initSharedMemory()
     {
         perror("Error in attaching shared memory");
         exit(-1);
+    }
+
+    if(addIsNew == 1){
+        *add = 0;
     }
 }
 
@@ -178,17 +189,14 @@ void up(int sem, int idx)
 
 void clearResources()
 {
+    down(semId,3);
     down(semId,4);
     //Check if there's other processes still running
-    if(getSemaphore(semId,4) != 0){
+    if(getSemaphore(semId,3) != 0){
         //detaching the buffer
         shmdt(buff);
         //detaching add
         shmdt(add);
-    }
-    else if (getSemaphore(semId,3) != 0){
-        //Destructing shared memories
-        shmctl(addId,IPC_RMID,(struct shmid_ds *)0);
     }
     else{
         //Destructing shared memories
@@ -200,6 +208,7 @@ void clearResources()
         semctl(semId,2,IPC_RMID);
         semctl(semId,3,IPC_RMID);
         semctl(semId,4,IPC_RMID);
+
     }
     exit(1);
 }
